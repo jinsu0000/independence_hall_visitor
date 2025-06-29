@@ -12,7 +12,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import warnings
-warnings.filterwarnings("ignore")
+from dataset_util import create_sliding_dataset, stratified_timesplit
+
+ings.filterwarnings("ignore")
 
 WINDOW_SIZE = 30
 
@@ -27,26 +29,12 @@ df = pd.read_csv(DATA_PATH, encoding="utf-8-sig", parse_dates=["date"])
 df = df.drop(columns=["press_titles"], errors="ignore")
 
 # 2. 슬라이딩 윈도우 데이터 생성 (X: WINDOW_SIZE일, y: 그 다음 날)
-def create_sliding_dataset(df, window=30):
-    features, targets, dates = [], [], []
-    feature_cols = [col for col in df.columns if col not in ["date", "attendences"]]
-    for i in range(len(df) - window):
-        X_window = df[feature_cols].iloc[i:i + window].mean().values
-        y = df["attendences"].iloc[i + window]
-        date = df["date"].iloc[i + window]
-        features.append(X_window)
-        targets.append(y)
-        dates.append(date)
-    return np.array(features), np.array(targets), dates
-
 X, y, dates = create_sliding_dataset(df, window=WINDOW_SIZE)
 dates = pd.to_datetime(dates)
 
-# 3. Train/Test Split (시계열 기반)
-split_idx = int(len(X) * 0.8)
-X_train, X_test = X[:split_idx], X[split_idx:]
-y_train, y_test = y[:split_idx], y[split_idx:]
-dates_test = dates[split_idx:]
+# 3. Train/Test Split (단일 시점 기반 평균)
+X_train, X_test, y_train, y_test, dates_train, dates_test = stratified_timesplit(X, y, dates)
+
 
 # 4. 모델 구성
 models = {
@@ -113,11 +101,11 @@ print(df_result)
 # 비교 그래프
 plt.figure(figsize=(10, 6))
 bar_width = 0.25
-x = np.arange(len(results_df["Model"]))
-plt.bar(x - bar_width, results_df["MAE"], width=bar_width, label="MAE")
-plt.bar(x, results_df["RMSE"], width=bar_width, label="RMSE")
-plt.bar(x + bar_width, results_df["R2"], width=bar_width, label="R2")
-plt.xticks(x, results_df["Model"])
+x = np.arange(len(df_result["Model"]))
+plt.bar(x - bar_width, df_result["MAE"], width=bar_width, label="MAE")
+plt.bar(x, df_result["RMSE"], width=bar_width, label="RMSE")
+plt.bar(x + bar_width, df_result["R2"], width=bar_width, label="R2")
+plt.xticks(x, df_result["Model"])
 plt.ylabel("Score")
 plt.title("Enhanced Model Performance Comparison")
 plt.legend()

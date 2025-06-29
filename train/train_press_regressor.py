@@ -97,9 +97,11 @@ with torch.no_grad():
 
 mae = mean_absolute_error(y_true, y_pred)
 rmse = mean_squared_error(y_true, y_pred, squared=False)
+mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+nrmse = rmse / np.mean(y_test)
 r2 = r2_score(y_true, y_pred)
 
-print(f"✅ PRESS 기반 회귀모델 성능 → MAE: {mae:.2f}, RMSE: {rmse:.2f}, R2: {r2:.4f}")
+print(f"📊 (MAPE: {mape:.2f}%, NRMSE: {nrmse:.3f})\n✅ PRESS 기반 회귀모델 성능 → MAE: {mae:.2f}, RMSE: {rmse:.2f}, R2: {r2:.4f}")
 
 # 결과 저장
 df_result = df.iloc[split_idx:].copy()

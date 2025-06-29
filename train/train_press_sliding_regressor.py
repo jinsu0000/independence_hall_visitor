@@ -18,7 +18,7 @@ output_dir = "../output_sliding"
 os.makedirs(output_dir, exist_ok=True)
 
 OUTPUT_PRED_CSV = f'{output_dir}/pred_press_sliding.csv'
-OUTPUT_MODEL_VIS = '../output_sliding/press_sliding_model.png'
+OUTPUT_MODEL_VIS = f'{output_dir}/press_sliding_model.png'
 WINDOW_SIZE = 30
 BATCH_SIZE = 32
 EPOCHS = 30
@@ -150,11 +150,13 @@ df_result = pd.DataFrame({
     "pred_from_press_sliding": preds
 })
 os.makedirs("../output", exist_ok=True)
-df_result.to_csv(OUTPUT_CSV, index=False, encoding="utf-8-sig")
+df_result.to_csv(OUTPUT_PRED_CSV, index=False, encoding="utf-8-sig")
 
 mae = mean_absolute_error(targets, preds)
 rmse = mean_squared_error(targets, preds, squared=False)
+mape = np.mean(np.abs((np.array(targets) - np.array(preds)) / np.array(targets))) * 100
+nrmse = rmse / np.mean(targets)
 r2 = r2_score(targets, preds)
 
-print(f"✅ Done! MAE: {mae:.2f}, RMSE: {rmse:.2f}, R2: {r2:.4f}")
-print(f"📁 Prediction result saved to {OUTPUT_CSV}")
+print(f"📊 (MAPE: {mape:.2f}%, NRMSE: {nrmse:.3f})\n✅ Done! MAE: {mae:.2f}, RMSE: {rmse:.3f}, R2: {r2:.4f}")
+print(f"📁 Prediction result saved to {OUTPUT_PRED_CSV}")
