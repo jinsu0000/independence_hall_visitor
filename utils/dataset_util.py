@@ -5,6 +5,7 @@ from typing import Tuple
 def create_sliding_dataset(df, window=30):
     features, targets, dates = [], [], []
     feature_cols = [col for col in df.columns if col not in ["date", "attendences"]]
+    print(f"create_sliding_dataset {df.shape}")
     for i in range(len(df) - window):
         X_window = df[feature_cols].iloc[i:i + window].mean().values
         y = df["attendences"].iloc[i + window]
@@ -12,7 +13,7 @@ def create_sliding_dataset(df, window=30):
         features.append(X_window)
         targets.append(y)
         dates.append(date)
-        print(f"Sliding {i} ~ {i + window}")
+        #print(f"Sliding {i} ~ {i + window}")
     return np.array(features), np.array(targets), dates
     
 def stratified_timesplit(

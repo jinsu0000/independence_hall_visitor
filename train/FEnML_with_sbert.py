@@ -1,3 +1,4 @@
+import sys
 import os
 import pandas as pd
 import numpy as np
@@ -12,30 +13,47 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import warnings
-from dataset_util import create_sliding_dataset, stratified_timesplit
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+from utils.dataset_util import create_sliding_dataset, stratified_timesplit
 
 warnings.filterwarnings("ignore")
 
 WINDOW_SIZE = 30
 
-DATA_PATH = "../data/refined/dataset_sbert_embed.csv"
+DATA_PATH = "../data/refined/dataset.csv"
+EMBED_PATH = "../data/refined/dataset_sbert_ae.csv"
 
-output_dir = "../output_FEnML_sbert_data"
+output_dir = "../output_FEnML_sbert_ae"
 os.makedirs(output_dir, exist_ok=True)
-OUTPUT_PATH = f"{output_dir}/fenml_sliding_sbert_results.csv"
+OUTPUT_PATH = f"{output_dir}/fenml_sbert_ae_results.csv"
 
-# 1. 데이터 로딩
-df = pd.read_csv(DATA_PATH, encoding="utf-8-sig", parse_dates=["date"])
+# 1. 데이터 로딩 및 병합
+df_main = pd.read_csv(DATA_PATH, encoding="utf-8-sig", parse_dates=["date"])
+df_embed = pd.read_csv(EMBED_PATH, encoding="utf-8-sig", parse_dates=["date"])
+df = pd.merge(df_main, df_embed, on="date", how="inner")
 df = df.drop(columns=["press_titles"], errors="ignore")
 
-# 2. 슬라이딩 윈도우 데이터 생성 (X: WINDOW_SIZE일, y: 그 다음 날)
-X, y, dates = create_sliding_dataset(df, window=WINDOW_SIZE)
+# 2. 정규화 처리
+y_all = df["attendences"].values
+df_features = df.drop(columns=["date", "attendences"])
+
+scaler = StandardScaler()
+X_scaled_all = scaler.fit_transform(df_features)
+df_scaled = pd.DataFrame(X_scaled_all, columns=df_features.columns)
+df_scaled["attendences"] = y_all
+df_scaled["date"] = df["date"].values
+
+# 3. 슬라이딩 윈도우 데이터 생성
+X, y, dates = create_sliding_dataset(df_scaled, window=WINDOW_SIZE)
 dates = pd.to_datetime(dates)
 
-# 3. Train/Test Split (단일 시점 기반 평균)
+# 4. Train/Test Split
 X_train, X_test, y_train, y_test, dates_train, dates_test = stratified_timesplit(X, y, dates)
 
-# 4. 모델 구성
+# 5. 모델 구성
 models = {
     "LinearRegression": (LinearRegression(), {}, True),
     "DecisionTree": (DecisionTreeRegressor(random_state=42), {"max_depth": [3, 5, 10, None]}, False),
@@ -47,7 +65,7 @@ models = {
 
 results = []
 
-# 5. 학습 및 평가
+# 6. 학습 및 평가
 for name, (model, params, scale) in models.items():
     print(f"🔍 Training {name}...")
     if scale:
@@ -90,10 +108,10 @@ for name, (model, params, scale) in models.items():
     plt.savefig(f"{output_dir}/{name}_sliding_prediction.png")
     plt.close()
 
-# 6. 결과 저장
+# 7. 결과 저장
 df_result = pd.DataFrame(results)
 df_result.to_csv(OUTPUT_PATH, index=False)
-print("✅ Sliding 기반 SBERT 포함 dataset FEnML 모델 학습 및 예측 완료")
+print("✅ SBERT-AE 기반 FEnML 모델 학습 및 예측 완료")
 print(df_result)
 
 # 비교 그래프
@@ -105,10 +123,10 @@ plt.bar(x, df_result["RMSE"], width=bar_width, label="RMSE")
 plt.bar(x + bar_width, df_result["R2"], width=bar_width, label="R2")
 plt.xticks(x, df_result["Model"])
 plt.ylabel("Score")
-plt.title("Enhanced Model Performance Comparison")
+plt.title("FEnML + SBERT-AE Model Performance")
 plt.legend()
 plt.tight_layout()
 plt.savefig(f"{output_dir}/model_comparison_enhanced.png")
 plt.close()
 
-print("✅ SBERT 임베딩 포함 모델 학습 완료.")
+print("✅ 모든 결과 저장 완료.")

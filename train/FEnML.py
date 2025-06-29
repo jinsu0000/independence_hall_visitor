@@ -1,3 +1,4 @@
+import sys
 import os
 import pandas as pd
 import numpy as np
@@ -12,9 +13,13 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import warnings
-from dataset_util import create_sliding_dataset, stratified_timesplit
 
-ings.filterwarnings("ignore")
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+from utils.dataset_util import create_sliding_dataset, stratified_timesplit
+
+warnings.filterwarnings("ignore")
 
 WINDOW_SIZE = 30
 
@@ -34,7 +39,6 @@ dates = pd.to_datetime(dates)
 
 # 3. Train/Test Split (단일 시점 기반 평균)
 X_train, X_test, y_train, y_test, dates_train, dates_test = stratified_timesplit(X, y, dates)
-
 
 # 4. 모델 구성
 models = {
