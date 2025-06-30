@@ -11,10 +11,13 @@ from sklearn.svm import SVR
 from xgboost import XGBRegressor
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from datetime import datetime
+import seaborn as sns
+
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -28,7 +31,7 @@ from utils.dataset_util import create_sliding_dataset, stratified_timesplit
 
 # 설정
 WINDOW_SIZE = 30
-EPOCHS = 500
+EPOCHS = 1000
 BATCH_SIZE = 64
 
 # 데이터 로딩
@@ -40,6 +43,12 @@ os.makedirs(output_dir, exist_ok=True)
 # 데이터 로딩 및 병합
 df_main = pd.read_csv(DATA_PATH, parse_dates=["date"]).drop(columns=["press_titles"], errors="ignore")
 df_embed = pd.read_csv(EMBED_PATH, parse_dates=["date"])
+
+# 날짜 정렬 후 슬라이싱 맞추기
+min_date = df_embed["date"].min()
+df_main = df_main[df_main["date"] >= min_date].reset_index(drop=True)
+
+# 병합
 df = pd.merge(df_main, df_embed, on="date")
 
 # 피처 분리 및 정규화
@@ -76,6 +85,7 @@ class DeepMLP(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(1024, 512),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(512, 256),
             nn.ReLU(),
             nn.Linear(256, 1)
@@ -87,7 +97,7 @@ class DeepMLP(nn.Module):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = nn.DataParallel(DeepMLP(X_train_mlp.shape[1])).to(device)
 loss_fn = nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
 train_loader = DataLoader(
     TensorDataset(torch.tensor(X_train_mlp, dtype=torch.float32),
@@ -173,6 +183,22 @@ for name, y_ml in pred_dict.items():
     y_ens = (y_ml + y_pred_mlp) / 2
     results.append(evaluate(y_test_ml, y_ens, f"Ensemble_{name}_+_MLP"))
 
+### RMSE 기반 가중치 계산
+rmse_dict = {
+    name: mean_squared_error(y_test_ml, pred_dict[name], squared=False)
+    for name in pred_dict
+}
+inv_rmse = {name: 1 / val for name, val in rmse_dict.items()}
+total_weight = sum(inv_rmse.values())
+weights = {name: val / total_weight for name, val in inv_rmse.items()}
+
+### Stacking (Meta Regressor)
+X_meta = np.column_stack([pred_dict[name] for name in pred_dict] + [y_pred_mlp])
+meta_model = Ridge().fit(X_meta, y_test_ml)
+y_meta = meta_model.predict(X_meta)
+results.append(evaluate(y_test_ml, y_meta, "Ensemble_Stacking_Ridge"))
+
+
 # 결과 저장 및 시각화
 df_result = pd.DataFrame(results)
 df_result.to_csv(os.path.join(output_dir, "sliding_combined_mlp_results.csv"), index=False)
@@ -201,4 +227,58 @@ plt.ylabel("Score")
 plt.legend()
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir, "sliding_model_comparison.png"))
+plt.close()
+
+
+# 예측 곡선 비교
+plt.figure(figsize=(14, 6))
+plt.plot(dates_test_ml, y_test_ml, label="Actual", linestyle="--", color="black")
+plt.plot(dates_test_ml, y_pred_mlp, label="MLP")
+plt.plot(dates_test_ml, pred_dict["XGBoost"], label="XGBoost")
+plt.plot(dates_test_ml, (pred_dict["XGBoost"] + y_pred_mlp) / 2, label="XGBoost+MLP Avg")
+plt.plot(dates_test_ml, y_meta, label="Stacking Ridge")
+plt.legend()
+plt.title("📈 Actual vs Predictions")
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "prediction_curve_comparison.png"))
+plt.close()
+
+# 모델별 잔차 분포
+plt.figure(figsize=(12, 5))
+residuals = {
+    "MLP": y_pred_mlp - y_test_ml,
+    "XGBoost": pred_dict["XGBoost"] - y_test_ml,
+    "Stacking": y_meta - y_test_ml
+}
+sns.boxplot(data=pd.DataFrame(residuals))
+plt.axhline(0, linestyle="--", color="gray")
+plt.title("📊 Residual Distribution by Model")
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "residuals_by_model.png"))
+plt.close()
+
+# 모델별 성능 바 플롯 (RMSE, MAPE)
+fig, ax = plt.subplots(figsize=(14, 6))
+bar_width = 0.35
+x = np.arange(len(df_result["Model"]))
+ax.bar(x - bar_width / 2, df_result["RMSE"], width=bar_width, label="RMSE")
+ax.bar(x + bar_width / 2, df_result["MAPE"], width=bar_width, label="MAPE")
+ax.set_xticks(x)
+ax.set_xticklabels(df_result["Model"], rotation=45, ha="right")
+ax.set_title("📊 Model Performance (RMSE vs MAPE)")
+ax.set_ylabel("Score")
+ax.legend()
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "performance_rmse_mape.png"))
+plt.close()
+
+# 예측 vs 실제 산점도 (Stacking 모델 기준)
+plt.figure(figsize=(6, 6))
+plt.scatter(y_test_ml, y_meta, alpha=0.6)
+plt.plot([min(y_test_ml), max(y_test_ml)], [min(y_test_ml), max(y_test_ml)], 'k--')
+plt.xlabel("Actual")
+plt.ylabel("Predicted")
+plt.title("🎯 Actual vs Predicted (Stacking)")
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "scatter_stacking_actual_vs_predicted.png"))
 plt.close()

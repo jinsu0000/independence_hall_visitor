@@ -1,0 +1,27 @@
+# Python & PyTorch 관련 무시 항목
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints/
+*.pth
+*.pt
+*.log
+*.tensorboard/
+runs/
+wandb/
+.env
+*.env
+
+# Conda, VSCode
+env/
+.venv/
+.vscode/
+
+# Data & Checkpoints
+data/
+saved/
+outputs/
+*.pkl
+*.zip
+
+# 학습 로그
+*.log           

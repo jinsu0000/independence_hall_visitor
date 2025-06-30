@@ -88,40 +88,43 @@ class AE(nn.Module):
 
 model = AE().to(DEVICE)
 if torch.cuda.device_count() > 1:
-    print(f"\U0001F680 Using {torch.cuda.device_count()} GPUs")
+    print(f"🚀 Using {torch.cuda.device_count()} GPUs")
     model = nn.DataParallel(model)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 criterion = nn.MSELoss()
 
-# 4. Sliding Window 구성 (30일 평균 벡터)
-print("📌 Step 2: 슬라이딩 윈도우 구성")
-window_inputs = []
+# 4. Sliding Window 구성: 30일 평균 → 31일째 벡터 예측
+print("📌 Step 2: Forecast-AE용 윈도우 구성")
+X_input, X_target = [], []
 for i in range(len(X_tensor) - WINDOW_SIZE):
-    window = X_tensor[i:i+WINDOW_SIZE]       # (30, 384)
-    window_vec = window.mean(dim=0)          # 또는 .flatten() 가능
-    window_inputs.append(window_vec.unsqueeze(0))
-    
-X_slide = torch.cat(window_inputs, dim=0)    # (num_windows, 384)
-print(f"X_slide : {X_slide.shape}")
+    window = X_tensor[i:i+WINDOW_SIZE]         # (30, 384)
+    future = X_tensor[i+WINDOW_SIZE]           # (384,)
+    window_vec = window.mean(dim=0)
+    X_input.append(window_vec.unsqueeze(0))
+    X_target.append(future.unsqueeze(0))
+
+X_input = torch.cat(X_input, dim=0)    # (N, 384)
+X_target = torch.cat(X_target, dim=0)  # (N, 384)
+print(f"Input shape: {X_input.shape}, Target shape: {X_target.shape}")
 
 # 5. AE 학습
-print("📌 Step 3: Sliding Window 기반 AE 학습 시작")
-loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_slide), batch_size=BATCH_SIZE, shuffle=False)
+print("📌 Step 3: Forecast-AE 학습 시작")
+loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_input, X_target), batch_size=BATCH_SIZE, shuffle=True)
 model.train()
 for epoch in range(EPOCHS):
     total_loss = 0
-    for (batch,) in loader:
-        batch = batch.to(DEVICE)
+    for xb, yb in loader:
+        xb, yb = xb.to(DEVICE), yb.to(DEVICE)
         optimizer.zero_grad()
-        z, recon = model(batch)
-        loss = criterion(recon, batch)
+        z, recon = model(xb)
+        loss = criterion(recon, yb)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
     print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {total_loss / len(loader):.6f}")
 
-# 4. 최종 임베딩 생성 (inference)
+# 6. 임베딩 생성 (예측기반 z 생성)
 print("📌 Step 4: 날짜별 임베딩 → z(32차원) 생성")
 model.eval()
 with torch.no_grad():
