@@ -8,16 +8,30 @@ from sklearn.manifold import TSNE
 from scipy.stats import pearsonr
 
 # 설정
-INPUT_CSV = "../data/refined/dataset_ae_per_day.csv"
-SAVE_DIR = "../data/figure/embed_analysis"
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+# [1] 경로 설정
+EMBED_CSV = "../data/refined/dataset_sbert_ae.csv"
+MAIN_CSV = "../data/refined/dataset.csv"
+SAVE_DIR = "../data/figure"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-# 1. 데이터 로딩
-df = pd.read_csv(INPUT_CSV, parse_dates=["date"])
-embedding_cols = [col for col in df.columns if col.startswith("press_emb_")]
+# [2] 데이터 불러오기
+df_embed = pd.read_csv(EMBED_CSV)
+df_main = pd.read_csv(MAIN_CSV)
+
+df_embed["date"] = pd.to_datetime(df_embed["date"])
+embedding_cols = [col for col in df_embed.columns if col.startswith("press_emb_")]
+df_main["date"] = pd.to_datetime(df_main["date"])
+
+# [3] 날짜 기준 병합 (방문객 수 추가)
+df = pd.merge(df_embed, df_main[["date", "attendences"]], on="date", how="left")
 
 X = df[embedding_cols].values
-y = df["visitor_count"].values
+y = df["attendences"].values
 dates = df["date"]
 
 print(f"✅ 로딩 완료: {X.shape[0]}개 날짜, {X.shape[1]}차원 임베딩")
